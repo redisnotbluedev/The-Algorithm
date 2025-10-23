@@ -5,10 +5,11 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from schema import class_to_json_schema
+from supabase import create_client
 
 load_dotenv()
 MEMORY_FILE = Path(os.getenv("MEMORY_FILE", "memory.json"))
-ai = AsyncOpenAI(api_key=os.getenv("OPENAI_KEY"))
+ai = AsyncOpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
 SYSTEM_PROMPT = ""
 with open(os.getenv("MEMORY_PROMPT"), encoding="utf-8") as f:
     SYSTEM_PROMPT = f.read()
@@ -47,13 +48,53 @@ class MemoryBank(BaseModel):
 	recent_summary: str = ""
 	historical_context: str = ""
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+_supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 def load_memory() -> MemoryBank:
-	if MEMORY_FILE.exists():
-		return MemoryBank(**json.loads(MEMORY_FILE.read_text(encoding="utf-8")))
-	return MemoryBank()
+    """
+    Load memory from Supabase if configured, otherwise fall back to local file.
+    """
+    if _supabase:
+        try:
+            res = _supabase.table("memories").select("data").eq("key", "memory").limit(1).execute()
+            if getattr(res, "error", None):
+                print("Supabase load error:", res.error)
+                return MemoryBank()
+            data_list = getattr(res, "data", None) or []
+            if data_list:
+                # data is stored in the `data` JSONB column
+                row = data_list[0]
+                if isinstance(row, dict) and "data" in row and row["data"] is not None:
+                    return MemoryBank(**row["data"])
+            return MemoryBank()
+        except Exception as e:
+            print("Supabase load exception:", repr(e))
+            return MemoryBank()
+    # fallback to local file
+    if MEMORY_FILE.exists():
+        return MemoryBank(**json.loads(MEMORY_FILE.read_text(encoding="utf-8")))
+    return MemoryBank()
 
 def save_memory(memory: MemoryBank):
-	MEMORY_FILE.write_text(memory.model_dump_json(indent=2), encoding="utf-8")
+    """
+    Save memory to Supabase if configured, otherwise write to local file.
+    Uses upsert so the single row with key="memory" is created/updated.
+    """
+    if _supabase:
+        try:
+            payload = {"key": "memory", "data": memory.model_dump()}
+            res = _supabase.table("memories").upsert(payload).execute()
+            if getattr(res, "error", None):
+                raise RuntimeError(f"Supabase save error: {res.error}")
+            return
+        except Exception as e:
+            raise
+    # fallback to local file
+    MEMORY_FILE.write_text(memory.model_dump_json(indent=2), encoding="utf-8")
 
 async def update_memory_bank(recent_messages: list, current_memory: MemoryBank, bot_user_id: str) -> MemoryBank:
     # Guard against None being passed in
@@ -76,7 +117,7 @@ Update the memory bank with any new information. Return only the JSON object des
     # Try letting the SDK parse directly into the Pydantic model first.
     try:
         response = await ai.responses.parse(
-            model="gpt-5-nano",
+            model="gpt-5-chat",
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -87,7 +128,7 @@ Update the memory bank with any new information. Return only the JSON object des
     except Exception:
         # Fallback: request raw response and validate into the Pydantic model manually
         resp = await ai.responses.create(
-            model="gpt-5-nano",
+            model="gpt-5-chat",
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

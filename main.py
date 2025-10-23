@@ -19,7 +19,7 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 
-ai = OpenAI(api_key=os.getenv("OPENAI_KEY"))
+ai = OpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
 SHORT_TERM = int(os.getenv("SHORT_TERM_WINDOW", 50))
 short_term_memory = deque(maxlen=SHORT_TERM)
 message_counter = 0
@@ -56,7 +56,7 @@ async def on_message(message: discord.Message):
 		async with message.channel.typing():
 			resp = await asyncio.to_thread(
 				ai.chat.completions.create,
-				model=os.getenv("MODEL"),
+				model="gpt-5-chat",
 				messages=[
 					{"role": "system", "content": SYSTEM_PROMPT.format(memory = memory)},
 					*[{

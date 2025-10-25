@@ -130,7 +130,7 @@ async def ping(interaction: discord.Interaction):
 
 @bot.tree.command(name="uptime", description="Get uptime.")
 async def get_uptime(interaction: discord.Interaction):
-	await interaction.response.send_message(f"Server started <t:{int(uptime.boottime())}:R>.")
+	await interaction.response.send_message(f"Server started <t:{int(uptime.boottime().timestamp())}:R>.")
 
 @bot.tree.command(name="kill", description="Goodnight!")
 async def refresh(interaction: discord.Interaction):

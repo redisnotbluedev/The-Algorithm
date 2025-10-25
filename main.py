@@ -1,9 +1,8 @@
 import os, sys, discord, asyncio, uptime, setenv
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
-#from algorithm_files import upload
 from discord.ext import commands
 
 load_dotenv()
@@ -18,7 +17,8 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-ai = OpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
+ai = AsyncOpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
+serkan = AsyncOpenAI(api_key=os.getenv("OPENAI_KEY"))
 SHORT_TERM = int(os.getenv("SHORT_TERM_WINDOW", 50))
 short_term_memory: deque[discord.Message] = deque(maxlen=SHORT_TERM)
 message_counter = 0
@@ -59,6 +59,25 @@ async def get_messages(memory):
 	
 	return {"messages": messages, "serkan": steal_key}
 
+async def describe_image(message: discord.Message):
+	images = []
+	for att in message.attachments:
+		if att.content_type.startswith("image/"):
+			images.append(att)
+	
+	if images:
+		resp = await serkan.chat.completions.create(
+			model="gpt-5-nano",
+			messages=[
+				{"role": "system", "content": "You are a vision AI. Summarise any attached images in as much detail as possible."},
+				{"role": "user", "content": list([
+					{"type": "image_url", "image_url": att.url}
+				] for att in images)}
+			]
+		)
+		return resp
+	return ""
+
 @bot.event
 async def on_ready():
 	print(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -85,14 +104,20 @@ async def on_message(message: discord.Message):
 		data = await get_messages(memory)
 
 		async with message.channel.typing():
-			resp = await asyncio.to_thread(
-				(OpenAI(api_key=os.getenv("OPENAI_KEY")) if data["serkan"] else ai).chat.completions.create,
-				model="gpt-5-nano" if data["serkan"] else "gpt-5-chat",
-				messages=data["messages"],
-				temperature=1 if data["serkan"] else 1.2
-			)
-			content = resp.choices[0].message.content
-		
+			if data["serkan"]:
+				resp, desc = await asyncio.gather(
+					serkan.chat.completions.create(model="gpt-5-nano", messages=data["messages"]),
+					describe_image(message.attachments)
+				)
+				short_term_memory[-1].attachments = []
+				short_term_memory[-1].content += f"\nAttached images:\n{desc.choices[0].message.content}"
+			else:
+				resp = await ai.chat.completions.create(
+					model="gpt-5-chat",
+					messages=data["messages"],
+					temperature=1.2
+				)
+		content = resp.choices[0].message.content
 		print("AI: " + content)
 		sent_message = await message.channel.send(content)
 		short_term_memory.append(sent_message)

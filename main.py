@@ -4,6 +4,7 @@ from openai import OpenAI
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
 from algorithm_files import upload
+from discord.ext import commands
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -15,8 +16,7 @@ GUILD_ID = int(os.getenv("GUILD_ID")) if os.getenv("GUILD_ID") else None
 intents = discord.Intents.default()
 intents.message_content = True
 
-client = discord.Client(intents=intents)
-tree = discord.app_commands.CommandTree(client)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 ai = OpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
 SHORT_TERM = int(os.getenv("SHORT_TERM_WINDOW", 50))
@@ -36,7 +36,7 @@ async def get_messages(memory):
 	for msg in list(short_term_memory):
 		text_template = ""
 		role = ""
-		if msg.author == client.user:
+		if msg.author == bot.user:
 			role = "assistant"
 			text_template = "{msg.content}"
 		else:
@@ -65,23 +65,23 @@ async def get_messages(memory):
 	
 	return messages
 
-@client.event
+@bot.event
 async def on_ready():
-	print(f"Logged in as {client.user} (ID: {client.user.id})")
+	print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 	try:
 		if GUILD_ID:
-			await tree.sync(guild=discord.Object(id=GUILD_ID))
+			await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
 			print(f"Synced app commands to guild {GUILD_ID}")
 		else:
-			await tree.sync()
+			await bot.tree.sync()
 			print("Synced global app commands")
 	except Exception as e:
 		print("Sync failed:", e)
 
-@client.event
+@bot.event
 async def on_message(message: discord.Message):
 	global message_counter
-	if message.author.bot or message.author == client.user or message.channel.id not in [1428968893111865384]:
+	if message.author.bot or message.author == bot.user or message.channel.id not in [1428968893111865384]:
 		return
 
 	try:
@@ -107,7 +107,7 @@ async def on_message(message: discord.Message):
 		# schedule memory update
 		if message_counter >= UPDATE_FREQUENCY:
 			message_counter = 0
-			task = asyncio.create_task(background_memory_update(list(short_term_memory)[-SHORT_TERM:], client.user.id))
+			task = asyncio.create_task(background_memory_update(list(short_term_memory)[-SHORT_TERM:], bot.user.id))
 
 			def _mem_done(t):
 				print()
@@ -129,16 +129,16 @@ async def on_message(message: discord.Message):
 	except Exception as e:
 		print("OpenAI request failed:", e)
 
-@tree.command(name="ping", description="Get latency.")
+@bot.tree.command(name="ping", description="Get latency.")
 async def ping(interaction: discord.Interaction):
-	latency_ms = round(client.latency * 1000)
+	latency_ms = round(bot.latency * 1000)
 	await interaction.response.send_message(f"Pong! {latency_ms}ms")
 
-@tree.command(name="uptime", description="Get uptime.")
-async def uptime(interaction: discord.Interaction):
+@bot.tree.command(name="uptime", description="Get uptime.")
+async def get_uptime(interaction: discord.Interaction):
 	await interaction.response.send_message(f"Server started <t:{int(uptime.boottime())}:R>.")
 
-@tree.command(name="kill", description="Goodnight!")
+@bot.tree.command(name="kill", description="Goodnight!")
 async def refresh(interaction: discord.Interaction):
 	if interaction.user.id != 1337909802931716197:
 		await interaction.response.send_message("You're not authorised LMAO")
@@ -146,13 +146,13 @@ async def refresh(interaction: discord.Interaction):
 		await interaction.response.send_message("Restarting all services. Goodnight.")
 		sys.exit(0)
 
-@tree.command(name="secret", description="Set a secret.")
+@bot.tree.command(name="secret", description="Set a secret.")
 async def set_secret(interaction: discord.Interaction, key: str, value: str):
 	if interaction.user.id != 1337909802931716197:
 		await interaction.response.send_message("You're not authorised LMAO")
 	else:
 		setenv.set_value(key, value)
-		await interaction.response.send_message("Added secret to .env")
+		await interaction.response.send_message("Added secret to .env", ephemeral=True)
 
 if __name__ == "__main__":
-	client.run(DISCORD_TOKEN)
+	bot.run(DISCORD_TOKEN)

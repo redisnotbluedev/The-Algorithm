@@ -1,8 +1,9 @@
-import os, sys, discord, asyncio, uptime, base64
+import os, sys, discord, asyncio, uptime, setenv
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
+from algorithm_files import upload
 
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -27,6 +28,8 @@ SYSTEM_PROMPT = ""
 with open(os.getenv("PROMPT_FILE")) as f:
 	SYSTEM_PROMPT = f.read()
 
+uploaded: dict[int, str] = {}
+
 async def get_messages(memory):
 	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory)}]
 
@@ -46,7 +49,13 @@ async def get_messages(memory):
 			for att in msg.attachments:
 				mime = att.content_type
 				if mime.startswith("image/"):
-					content.append({"type": "image_url", "image_url": {"url": base64.b64encode(await att.read()).decode('utf-8')}})
+					if att.id in uploaded:
+						url = uploaded[att.id]
+					else:
+						url = await upload(att.read(), att.filename)
+						uploaded[att.id] = url
+					
+					content.append({"type": "image_url", "image_url": {"url": url}})
 		
 		messages.append({
 			"role": role,
@@ -136,6 +145,14 @@ async def refresh(interaction: discord.Interaction):
 	else:
 		await interaction.response.send_message("Restarting all services. Goodnight.")
 		sys.exit(0)
+
+@tree.command(name="secret", description="Set a secret.")
+async def set_secret(interaction: discord.Interaction, key: str, value: str):
+	if interaction.user.id != 1337909802931716197:
+		await interaction.response.send_message("You're not authorised LMAO")
+	else:
+		setenv.set_value(key, value)
+		await interaction.response.send_message("Added secret to .env")
 
 if __name__ == "__main__":
 	client.run(DISCORD_TOKEN)

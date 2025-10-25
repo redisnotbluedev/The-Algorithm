@@ -3,3 +3,4 @@ python-dotenv
 openai
 supabase
 uptime
+vercel_blob

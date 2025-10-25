@@ -42,7 +42,7 @@ def get_messages(memory):
 		
 		if text_template:
 			content = [{"type": "text", "text": text_template.format(msg=msg)}]
-		elif msg.attachments:
+		if msg.attachments:
 			print("Found attachments in message.")
 			for att in msg.attachments:
 				mime = att.content_type

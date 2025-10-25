@@ -87,7 +87,7 @@ async def on_message(message: discord.Message):
 		async with message.channel.typing():
 			resp = await asyncio.to_thread(
 				(OpenAI(api_key=os.getenv("OPENAI_KEY")) if data["serkan"] else ai).chat.completions.create,
-				model="gpt-5-chat",
+				model="gpt-5-nano" if data["serkan"] else "gpt-5-chat",
 				messages=data["messages"],
 				temperature=0.9
 			)

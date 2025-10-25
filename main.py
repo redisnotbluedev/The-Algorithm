@@ -89,7 +89,7 @@ async def on_message(message: discord.Message):
 				(OpenAI(api_key=os.getenv("OPENAI_KEY")) if data["serkan"] else ai).chat.completions.create,
 				model="gpt-5-nano" if data["serkan"] else "gpt-5-chat",
 				messages=data["messages"],
-				temperature=0.9
+				temperature=1 if data["serkan"] else 1.2
 			)
 			content = resp.choices[0].message.content
 		

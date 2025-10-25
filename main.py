@@ -70,7 +70,7 @@ async def describe_image(message: discord.Message):
 			model="gpt-5-nano",
 			messages=[
 				{"role": "system", "content": "You are a vision AI. Summarise any attached images in as much detail as possible."},
-				{"role": "user", "content": list([
+				{"role": "user", "content": ([
 					{"type": "image_url", "image_url": att.url}
 				] for att in images)}
 			]

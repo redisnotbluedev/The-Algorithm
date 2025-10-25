@@ -52,7 +52,7 @@ async def get_messages(memory):
 					if att.id in uploaded:
 						url = uploaded[att.id]
 					else:
-						url = await upload(att.read(), att.filename)
+						url = await upload(await att.read(), att.filename)
 						uploaded[att.id] = url
 					
 					content.append({"type": "image_url", "image_url": {"url": url}})

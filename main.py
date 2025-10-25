@@ -1,4 +1,4 @@
-import os, sys, discord, asyncio, uptime
+import os, sys, discord, asyncio, uptime, base64
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import deque
@@ -27,7 +27,7 @@ SYSTEM_PROMPT = ""
 with open(os.getenv("PROMPT_FILE")) as f:
 	SYSTEM_PROMPT = f.read()
 
-def get_messages(memory):
+async def get_messages(memory):
 	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory)}]
 
 	for msg in list(short_term_memory):
@@ -43,14 +43,10 @@ def get_messages(memory):
 		if text_template:
 			content = [{"type": "text", "text": text_template.format(msg=msg)}]
 		if msg.attachments:
-			print("Found attachments in message.")
 			for att in msg.attachments:
 				mime = att.content_type
 				if mime.startswith("image/"):
-					print("	Attachment is an image, adding.")
-					content.append({"type": "image_url", "image_url": {"url": att.url}})
-				else:
-					print(f"	Attachment has MIME {mime}, skipping.")
+					content.append({"type": "image_url", "image_url": {"url": base64.b64encode(await att.read()).decode('utf-8')}})
 		
 		messages.append({
 			"role": role,

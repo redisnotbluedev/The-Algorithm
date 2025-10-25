@@ -1,8 +1,6 @@
-import os
+import os, sys, discord, asyncio, shlex, subprocess
 from dotenv import load_dotenv
-import discord
 from openai import OpenAI
-import asyncio
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
 
@@ -21,13 +19,39 @@ tree = discord.app_commands.CommandTree(client)
 
 ai = OpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
 SHORT_TERM = int(os.getenv("SHORT_TERM_WINDOW", 50))
-short_term_memory = deque(maxlen=SHORT_TERM)
+short_term_memory: deque[discord.Message] = deque(maxlen=SHORT_TERM)
 message_counter = 0
 UPDATE_FREQUENCY = int(os.getenv("UPDATE_FREQUENCY", 20))
 
 SYSTEM_PROMPT = ""
 with open(os.getenv("PROMPT_FILE")) as f:
 	SYSTEM_PROMPT = f.read()
+
+def get_messages(memory):
+	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory)}]
+
+	for msg in list(short_term_memory):
+		text_template = ""
+		role = ""
+		if msg.author == client.user:
+			role = "assistant"
+			text_template = "{msg.content}"
+		else:
+			role = "user"
+			text_template = "{msg.author.name}: {msg.content}"
+		
+		if text_template:
+			content = [{"type": "text", "text": text_template.format(msg=msg)}]
+		elif msg.attachments:
+			for att in msg.attachments:
+				mime = att.content_type
+				if mime.startswith("image/"):
+					content.append({"type": "image_url", "image_url": {"url": att.url}})
+		
+		messages.append({
+			"role": role,
+			"content": content
+		})
 
 @client.event
 async def on_ready():
@@ -52,23 +76,17 @@ async def on_message(message: discord.Message):
 		short_term_memory.append(message)
 		memory = format_memory_naturally(load_memory())
 		print(f"\n{message.author.name}: {message.content}")
+		messages = get_messages(memory)
 
 		async with message.channel.typing():
 			resp = await asyncio.to_thread(
 				ai.chat.completions.create,
 				model="gpt-5-chat",
-				messages=[
-					{"role": "system", "content": SYSTEM_PROMPT.format(memory = memory)},
-					*[{
-						"role": "user" if msg.author != client.user else "assistant", 
-						"content": msg.content if msg.author == client.user else f"{msg.author.name}: {msg.content}"
-					} for msg in list(short_term_memory)]
-				],
+				messages=messages,
 				temperature=0.9
 			)
 			content = resp.choices[0].message.content
 		
-		# Send message and capture it for memory
 		print("AI: " + content)
 		sent_message = await message.channel.send(content)
 		short_term_memory.append(sent_message)
@@ -99,10 +117,30 @@ async def on_message(message: discord.Message):
 	except Exception as e:
 		print("OpenAI request failed:", e)
 
-@tree.command(name="ping", description="Pong")
+@tree.command(name="ping", description="Get latency.")
 async def ping(interaction: discord.Interaction):
 	latency_ms = round(client.latency * 1000)
 	await interaction.response.send_message(f"Pong! {latency_ms}ms")
+
+@tree.command(nmae="restart", description="Goodnight!")
+async def refresh(interaction: discord.Interaction):
+	if interaction.user.id != 1337909802931716197:
+		await interaction.response.send_message("You're not authorised LMAO")
+	else:
+		await interaction.response.send_message("[INFO] Restarting all services. Goodnight.")
+		restart_command = (
+			f"sleep 5; "
+			f"git pull; "
+			f"exec {shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(sys.argv[0]))}"
+		)
+
+		subprocess.Popen(
+			['/bin/bash', '-c', f'nohup {restart_command} &'], 
+			close_fds=True,
+			start_new_session=True
+		)
+		
+		sys.exit(0)
 
 if __name__ == "__main__":
 	client.run(DISCORD_TOKEN)

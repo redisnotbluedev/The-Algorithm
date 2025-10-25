@@ -122,7 +122,7 @@ async def ping(interaction: discord.Interaction):
 	latency_ms = round(client.latency * 1000)
 	await interaction.response.send_message(f"Pong! {latency_ms}ms")
 
-@tree.command(nmae="restart", description="Goodnight!")
+@tree.command(name="restart", description="Goodnight!")
 async def refresh(interaction: discord.Interaction):
 	if interaction.user.id != 1337909802931716197:
 		await interaction.response.send_message("You're not authorised LMAO")

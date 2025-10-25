@@ -1,4 +1,4 @@
-import os, sys, discord, asyncio, shlex, subprocess
+import os, sys, discord, asyncio, uptime
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import deque
@@ -52,6 +52,8 @@ def get_messages(memory):
 			"role": role,
 			"content": content
 		})
+	
+	return messages
 
 @client.event
 async def on_ready():
@@ -122,24 +124,16 @@ async def ping(interaction: discord.Interaction):
 	latency_ms = round(client.latency * 1000)
 	await interaction.response.send_message(f"Pong! {latency_ms}ms")
 
-@tree.command(name="restart", description="Goodnight!")
+@tree.command(name="uptime", description="Get uptime.")
+async def uptime(interaction: discord.Interaction):
+	await interaction.response.send_message(f"Server started <t:{int(uptime.boottime())}:R>.")
+
+@tree.command(name="kill", description="Goodnight!")
 async def refresh(interaction: discord.Interaction):
 	if interaction.user.id != 1337909802931716197:
 		await interaction.response.send_message("You're not authorised LMAO")
 	else:
-		await interaction.response.send_message("[INFO] Restarting all services. Goodnight.")
-		restart_command = (
-			f"sleep 5; "
-			f"git pull; "
-			f"exec {shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(sys.argv[0]))}"
-		)
-
-		subprocess.Popen(
-			['/bin/bash', '-c', f'nohup {restart_command} &'], 
-			close_fds=True,
-			start_new_session=True
-		)
-		
+		await interaction.response.send_message("Restarting all services. Goodnight.")
 		sys.exit(0)
 
 if __name__ == "__main__":

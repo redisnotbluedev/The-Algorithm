@@ -79,7 +79,7 @@ async def on_message(message: discord.Message):
 		short_term_memory.append(message)
 		memory = format_memory_naturally(load_memory())
 		print(f"\n{message.author.name}: {message.content}")
-		messages = get_messages(memory)
+		messages = await get_messages(memory)
 
 		async with message.channel.typing():
 			resp = await asyncio.to_thread(

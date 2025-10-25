@@ -107,7 +107,7 @@ async def on_message(message: discord.Message):
 			if data["serkan"]:
 				resp, desc = await asyncio.gather(
 					serkan.chat.completions.create(model="gpt-5-nano", messages=data["messages"]),
-					describe_image(message.attachments)
+					describe_image(message)
 				)
 				short_term_memory[-1].attachments = []
 				short_term_memory[-1].content += f"\nAttached images:\n{desc.choices[0].message.content}"

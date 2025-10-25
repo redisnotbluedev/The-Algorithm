@@ -1,10 +1,9 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict
-import json, os, asyncio, traceback
+import json, os, traceback
 from pathlib import Path
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from schema import class_to_json_schema
 from supabase import create_client
 
 load_dotenv()

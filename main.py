@@ -43,15 +43,20 @@ def get_messages(memory):
 		if text_template:
 			content = [{"type": "text", "text": text_template.format(msg=msg)}]
 		elif msg.attachments:
+			print("Found attachments in message.")
 			for att in msg.attachments:
 				mime = att.content_type
 				if mime.startswith("image/"):
+					print("	Attachment is an image, adding.")
 					content.append({"type": "image_url", "image_url": {"url": att.url}})
+				else:
+					print(f"	Attachment has MIME {mime}, skipping.")
 		
 		messages.append({
 			"role": role,
 			"content": content
 		})
+		print(content)
 	
 	return messages
 

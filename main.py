@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
-from algorithm_files import upload
+#from algorithm_files import upload
 from discord.ext import commands
 
 load_dotenv()
@@ -28,10 +28,9 @@ SYSTEM_PROMPT = ""
 with open(os.getenv("PROMPT_FILE")) as f:
 	SYSTEM_PROMPT = f.read()
 
-uploaded: dict[int, str] = {}
-
 async def get_messages(memory):
 	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory)}]
+	steal_key = False
 
 	for msg in list(short_term_memory):
 		text_template = ""
@@ -49,13 +48,8 @@ async def get_messages(memory):
 			for att in msg.attachments:
 				mime = att.content_type
 				if mime.startswith("image/"):
-					if att.id in uploaded:
-						url = uploaded[att.id]
-					else:
-						url = await upload(await att.read(), att.filename)
-						uploaded[att.id] = url
-					
-					content.append({"type": "image_url", "image_url": {"url": url}})
+					steal_key = True
+					content.append({"type": "image_url", "image_url": {"url": att.url}})
 		
 		messages.append({
 			"role": role,
@@ -63,7 +57,7 @@ async def get_messages(memory):
 		})
 		print(content)
 	
-	return messages
+	return {"messages": messages, "serkan": steal_key}
 
 @bot.event
 async def on_ready():
@@ -88,13 +82,13 @@ async def on_message(message: discord.Message):
 		short_term_memory.append(message)
 		memory = format_memory_naturally(load_memory())
 		print(f"\n{message.author.name}: {message.content}")
-		messages = await get_messages(memory)
+		data = await get_messages(memory)
 
 		async with message.channel.typing():
 			resp = await asyncio.to_thread(
-				ai.chat.completions.create,
+				(OpenAI(api_key=os.getenv("OPENAI_KEY")) if data["serkan"] else ai).chat.completions.create,
 				model="gpt-5-chat",
-				messages=messages,
+				messages=data["messages"],
 				temperature=0.9
 			)
 			content = resp.choices[0].message.content

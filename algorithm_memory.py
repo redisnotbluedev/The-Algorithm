@@ -116,7 +116,7 @@ Update the memory bank with any new information. Return only the JSON object des
 	# Try letting the SDK parse directly into the Pydantic model first.
 	try:
 		response = await ai.responses.parse(
-			model="gpt-5-chat",
+			model="gpt-5-nano",
 			input=[
 				{"role": "system", "content": system_prompt},
 				{"role": "user", "content": user_prompt},
@@ -127,7 +127,7 @@ Update the memory bank with any new information. Return only the JSON object des
 	except Exception:
 		# Fallback: request raw response and validate into the Pydantic model manually
 		resp = await ai.responses.create(
-			model="gpt-5-chat",
+			model="gpt-5-nano",
 			input=[
 				{"role": "system", "content": system_prompt},
 				{"role": "user", "content": user_prompt},

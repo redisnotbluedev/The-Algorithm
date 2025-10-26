@@ -4,3 +4,4 @@ openai
 supabase
 uptime
 vercel_blob
+bs4

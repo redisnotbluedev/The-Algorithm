@@ -100,7 +100,7 @@ async def update_memory_bank(recent_messages: list, current_memory: MemoryBank, 
 	recent_messages = list(recent_messages or [])
 
 	formatted_messages = "\n".join(
-		f"{getattr(m.author, 'name', getattr(m.author, 'global_name', '<unknown>'))} (ID: {getattr(m.author, 'id', '<no-id>')}): {getattr(m, 'content', '')}" 
+		f"{m['name']} (ID: {m['id']}): {m['content']}" 
 		for m in recent_messages
 	)
 

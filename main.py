@@ -1,8 +1,9 @@
-import os, sys, discord, asyncio, uptime, setenv
+import os, sys, discord, asyncio, uptime, setenv, re, time, inspect
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from collections import deque
 from algorithm_memory import load_memory, background_memory_update, format_memory_naturally
+import algorithm_tool as tools
 from discord.ext import commands
 
 load_dotenv()
@@ -20,7 +21,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 ai = AsyncOpenAI(api_key=os.getenv("API_KEY"), base_url="https://api.llm7.io/v1")
 serkan = AsyncOpenAI(api_key=os.getenv("OPENAI_KEY"))
 SHORT_TERM = int(os.getenv("SHORT_TERM_WINDOW", 50))
-short_term_memory: deque[discord.Message] = deque(maxlen=SHORT_TERM)
+short_term_memory: deque[dict] = deque(maxlen=SHORT_TERM)
 message_counter = 0
 UPDATE_FREQUENCY = int(os.getenv("UPDATE_FREQUENCY", 20))
 
@@ -28,24 +29,27 @@ SYSTEM_PROMPT = ""
 with open(os.getenv("PROMPT_FILE")) as f:
 	SYSTEM_PROMPT = f.read()
 
+tool = re.compile(r"\ncall (\w+)(?: (.+))?$")
+functions = tools.tools
+
 async def get_messages(memory):
-	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory)}]
+	messages = [{"role": "system", "content": SYSTEM_PROMPT.format(memory=memory, tools=tools.format_tools(functions))}]
 	steal_key = False
 
 	for msg in list(short_term_memory):
 		text_template = ""
 		role = ""
-		if msg.author == bot.user:
+		if msg["a_id"] == bot.user.id:
 			role = "assistant"
-			text_template = "{msg.content}"
+			text_template = "{msg[content]}"
 		else:
 			role = "user"
-			text_template = "{msg.author.name}: {msg.content}"
+			text_template = "{msg[name]}: {msg[content]}"
 		
 		if text_template:
 			content = [{"type": "text", "text": text_template.format(msg=msg)}]
-		if msg.attachments:
-			for att in msg.attachments:
+		if msg['attachments']:
+			for att in msg['attachments']:
 				mime = att.content_type
 				if mime.startswith("image/"):
 					steal_key = True
@@ -79,6 +83,74 @@ async def describe_image(message: discord.Message):
 		return resp
 	return ""
 
+def create_message(msg: discord.Message):
+	return {"name": msg.author.name, "a_id": msg.author.id, "content": msg.content, "attachments": msg.attachments, "time": int(msg.created_at.timestamp())}
+
+async def ask(content: str, memory: str, channel: discord.TextChannel, max_depth: int = 5) -> str:
+	"""
+	Recursively execute tool calls until Algorithm stops requesting tools or max depth reached.
+	Returns final content to send to Discord.
+	"""
+	if max_depth <= 0:
+		return content + "\n\n(reached max tool depth, stopping)"
+	
+	if content.endswith("call none"):
+		return
+
+	result = tool.search(content)
+	if not result:
+		return content
+	
+	name = result.group(1)
+	args = result.group(2)
+	content_before_call = content[:result.start()]
+	
+	if content_before_call.strip():
+		await channel.send(content_before_call)
+	
+	short_term_memory.append({
+		"name": "The Algorithm",
+		"a_id": bot.user.id,
+		"content": content,
+		"attachments": [],
+		"time": time.time()
+	})
+	
+	if name in functions:
+		try:
+			if args:
+				tool_result = functions[name]["function"](*args.split(","))
+			else:
+				tool_result = functions[name]["function"]()
+			if inspect.isawaitable(tool_result):
+				tool_result = await tool_result
+		except Exception as e:
+			tool_result = f"Error: {str(e)}"
+		
+		if tool_result == "system:_none":
+			return
+
+		short_term_memory.append({
+			"name": "system:tool_call",
+			"a_id": 0,
+			"content": tool_result,
+			"attachments": [],
+			"time": time.time()
+		})
+		
+		data = await get_messages(memory)
+		resp = await ai.chat.completions.create(
+			model="gpt-5-chat",
+			messages=data["messages"],
+			temperature=1.2
+		)
+		new_content = resp.choices[0].message.content
+		print(f"AI (after {name}): {new_content}")
+		
+		return await ask(new_content, memory, channel, max_depth - 1)
+	else:
+		return content_before_call + f"\n\n(tried to call non-existent tool: {name})"
+
 @bot.event
 async def on_ready():
 	print(f"Logged in as {bot.user} (ID: {bot.user.id})")
@@ -89,6 +161,7 @@ async def on_ready():
 		else:
 			await bot.tree.sync()
 			print("Synced global app commands")
+		tools.current_bot = bot
 	except Exception as e:
 		print("Sync failed:", e)
 
@@ -99,10 +172,11 @@ async def on_message(message: discord.Message):
 		return
 
 	try:
-		short_term_memory.append(message)
+		short_term_memory.append(create_message(message))
 		memory = format_memory_naturally(load_memory())
 		print(f"\n{message.author.name}: {message.content}")
 		data = await get_messages(memory)
+		tools.current_message = message
 
 		async with message.channel.typing():
 			if data["serkan"]:
@@ -110,18 +184,24 @@ async def on_message(message: discord.Message):
 					serkan.chat.completions.create(model="gpt-5-nano", messages=data["messages"]),
 					describe_image(message)
 				)
-				short_term_memory[-1].attachments = []
-				short_term_memory[-1].content += f"\nAttached images:\n{desc.choices[0].message.content}"
+				short_term_memory[-1]['attachments'] = []
+				short_term_memory[-1]['content'] += f"\nAttached images:\n{desc.choices[0].message.content}"
 			else:
 				resp = await ai.chat.completions.create(
 					model="gpt-5-chat",
 					messages=data["messages"],
 					temperature=1.2
 				)
+		
 		content = resp.choices[0].message.content
 		print("AI: " + content)
-		sent_message = await message.channel.send(content)
-		short_term_memory.append(sent_message)
+
+		# Handle recursive tool calls
+		final_content = await ask(content, memory, message.channel)
+
+		# Send final message
+		sent_message = await message.channel.send(final_content)
+		short_term_memory.append(create_message(sent_message))
 		
 		message_counter += 1
 		# schedule memory update
@@ -147,7 +227,7 @@ async def on_message(message: discord.Message):
 			task.add_done_callback(_mem_done)
 		
 	except Exception as e:
-		print("OpenAI request failed:", e)
+		raise
 
 @bot.tree.command(name="ping", description="Get latency.")
 async def ping(interaction: discord.Interaction):
